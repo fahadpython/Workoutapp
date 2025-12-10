@@ -17,6 +17,8 @@
     <meta name="description" content="IronGuide Pro - Offline Workout Tracker" />
 
     <title>IronGuide Pro</title>
+    
+    <!-- Using Tailwind CDN for simplicity in this setup -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -59,18 +61,10 @@
       /* Safe area padding for iPhones with notch */
       .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
     </style>
-  <script type="importmap">
-{
-  "imports": {
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
-    "react/": "https://aistudiocdn.com/react@^19.2.1/",
-    "react": "https://aistudiocdn.com/react@^19.2.1",
-    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.556.0"
-  }
-}
-</script>
-</head>
+  </head>
   <body>
     <div id="root"></div>
+    <!-- THIS LINE IS CRITICAL FOR VERCEL/VITE DEPLOYMENT -->
+    <script type="module" src="/index.tsx"></script>
   </body>
 </html>
