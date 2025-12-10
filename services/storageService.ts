@@ -59,6 +59,25 @@ export const loadUserStats = (): UserStats => {
   };
 };
 
+// --- Helper: Calorie Calculation ---
+export const calculateCalories = (metric1: number, metric2: number, metValue: number, isCardio: boolean = false) => {
+    // Formula: MET * BodyWeight(kg) * Duration(hours)
+    const stats = loadUserStats();
+    const bw = stats.bodyWeight > 0 ? stats.bodyWeight : 75;
+    
+    let durationHours = 0;
+
+    if (isCardio) {
+      // Metric 2 is Time in minutes
+      durationHours = metric2 / 60;
+    } else {
+      // Metric 2 is Reps, estimate 4s per rep
+      durationHours = (metric2 * 4) / 3600; 
+    }
+    
+    return Math.round((metValue * bw * durationHours) * 10) / 10; // Round to 1 decimal
+};
+
 // --- History Management ---
 
 export const saveExerciseLog = (exerciseId: string, weight: number, reps: number, setNumber: number) => {
@@ -130,7 +149,7 @@ export const getDashboardStats = (): DashboardStats => {
   
   // 1. Weekly Volume
   const weeklyVolume: Record<string, number> = {
-    Chest: 0, Back: 0, Legs: 0, Shoulders: 0, Triceps: 0, Biceps: 0, Abs: 0
+    Chest: 0, Back: 0, Legs: 0, Shoulders: 0, Triceps: 0, Biceps: 0, Abs: 0, Cardio: 0
   };
   
   const now = new Date();
@@ -140,35 +159,61 @@ export const getDashboardStats = (): DashboardStats => {
   // 2. PRs
   const personalRecords: Record<string, { weight: number; exerciseName: string; date: string }> = {};
   let bestLift: { weight: number; exerciseName: string } | null = null;
+  
+  // 3. Calories
+  let totalCalories = 0;
 
   Object.keys(fullHistory).forEach(exerciseId => {
     const logs = fullHistory[exerciseId] as HistoryLog[];
-    const exerciseDef = ALL_EXERCISES.find(e => e.id === exerciseId);
-    if (!exerciseDef) return;
+    
+    // Try to find in ALL_EXERCISES first (constants), but user might have custom ones
+    // We can't easily access custom exercise definitions here since they are in session
+    // So we try to match by ID prefix or fallback
+    
+    let exerciseDef = ALL_EXERCISES.find(e => e.id === exerciseId);
+    
+    // Basic fallback if custom exercise info is missing in constants
+    // In a real app we would store custom exercise definitions in localStorage too
+    if (!exerciseDef) {
+       // Mock definition for custom exercises to avoid crash
+       exerciseDef = { 
+         id: exerciseId, 
+         name: 'Custom Exercise', 
+         type: 'weighted', // Default assumption
+         sets: 3, reps: '10', 
+         restSeconds: 60, cues: '', muscleFocus: 'Custom', targetGroup: 'Other', feeling: '', 
+         pacer: { phases: [], startDelay: 0 }, metValue: 4 
+       } as any;
+    }
 
     // Calculate PR
     let maxWeight = 0;
     let prDate = '';
     
     logs.forEach(log => {
-      // PR Logic
-      if (log.weight > maxWeight) {
+      // PR Logic (Only for weighted)
+      if (log.weight > maxWeight && exerciseDef?.type === 'weighted') {
         maxWeight = log.weight;
         prDate = log.date;
       }
 
       // Volume Logic (If within this week)
-      if (new Date(log.date) >= startOfWeek && exerciseDef.targetGroup !== 'Warmup') {
-        if (weeklyVolume[exerciseDef.targetGroup] !== undefined) {
-          weeklyVolume[exerciseDef.targetGroup]++;
-        }
+      if (new Date(log.date) >= startOfWeek) {
+         if (exerciseDef?.targetGroup && weeklyVolume[exerciseDef.targetGroup] !== undefined) {
+            weeklyVolume[exerciseDef.targetGroup]++;
+         }
+         
+         // Calorie Logic
+         const isCardio = exerciseDef?.type === 'cardio';
+         const setCals = calculateCalories(log.weight, log.reps, exerciseDef?.metValue || 4, isCardio);
+         totalCalories += setCals;
       }
     });
 
-    if (maxWeight > 0) {
-      personalRecords[exerciseId] = { weight: maxWeight, exerciseName: exerciseDef.name, date: prDate };
+    if (maxWeight > 0 && exerciseDef?.type === 'weighted') {
+      personalRecords[exerciseId] = { weight: maxWeight, exerciseName: exerciseDef?.name || 'Exercise', date: prDate };
       if (!bestLift || maxWeight > bestLift.weight) {
-        bestLift = { weight: maxWeight, exerciseName: exerciseDef.name };
+        bestLift = { weight: maxWeight, exerciseName: exerciseDef?.name || 'Exercise' };
       }
     }
   });
@@ -181,7 +226,8 @@ export const getDashboardStats = (): DashboardStats => {
     weeklyVolume,
     missedMuscles,
     personalRecords,
-    bestLift
+    bestLift,
+    totalCalories: Math.round(totalCalories)
   };
 };
 

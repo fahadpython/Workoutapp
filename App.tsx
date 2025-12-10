@@ -1,13 +1,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { WORKOUT_SCHEDULE, ALL_WORKOUTS } from './constants';
-import { SessionData, UserStats, DAYS_OF_WEEK } from './types';
-import { loadSession, saveSession, loadUserStats, saveUserStats, saveExerciseLog, clearAllData, getTodayString, getDashboardStats, getCreatineStats } from './services/storageService';
+import { SessionData, UserStats, DAYS_OF_WEEK, Exercise } from './types';
+import { loadSession, saveSession, loadUserStats, saveUserStats, saveExerciseLog, clearAllData, getTodayString, getDashboardStats, getCreatineStats, calculateCalories } from './services/storageService';
 import ExerciseCard from './components/ExerciseCard';
 import WorkoutView from './components/WorkoutView';
 import Timer from './components/Timer';
 import StatsView from './components/StatsView';
-import { Droplets, Trophy, Battery, UserCircle2, ArrowRight, Home, Settings, Trash2, Edit2, BarChart3, Dumbbell, ArrowLeft, Play, Volume2, Mic } from 'lucide-react';
+import { Droplets, Trophy, Battery, UserCircle2, ArrowRight, Home, Settings, Trash2, Edit2, BarChart3, Dumbbell, ArrowLeft, Play, Volume2, Mic, Flame } from 'lucide-react';
 
 const App: React.FC = () => {
   const [currentSession, setCurrentSession] = useState<SessionData | null>(null);
@@ -19,6 +19,7 @@ const App: React.FC = () => {
   const [selectedWorkoutId, setSelectedWorkoutId] = useState<string | null>(null);
   const [showWorkoutSelector, setShowWorkoutSelector] = useState(false);
   const [bestLift, setBestLift] = useState<{weight: number, exerciseName: string} | null>(null);
+  const [weeklyCalories, setWeeklyCalories] = useState(0);
 
   // Load active session on mount
   useEffect(() => {
@@ -33,6 +34,7 @@ const App: React.FC = () => {
     // Load simple stats for home screen
     const stats = getDashboardStats();
     setBestLift(stats.bestLift);
+    setWeeklyCalories(stats.totalCalories);
   }, []);
 
   // Save session whenever it changes
@@ -47,9 +49,18 @@ const App: React.FC = () => {
 
   // Determine which workout plan to use
   const getActivePlan = () => {
+    // 1. Critical Fix: If a session is active, ALWAYS load that plan to prevent data mismatch on refresh
+    if (currentSession && !currentSession.isFinished && currentSession.workoutId) {
+        const sessionPlan = ALL_WORKOUTS.find(w => w.id === currentSession.workoutId);
+        if (sessionPlan) return sessionPlan;
+    }
+
+    // 2. Manual selection
     if (selectedWorkoutId) {
       return ALL_WORKOUTS.find(w => w.id === selectedWorkoutId) || null;
     }
+
+    // 3. Default schedule
     return WORKOUT_SCHEDULE[todayIndex];
   };
 
@@ -62,6 +73,7 @@ const App: React.FC = () => {
       workoutId: activePlan.id,
       startTime: Date.now(),
       completedExercises: {},
+      customExercises: [], // Initialize custom array
       activeExerciseId: null,
       activeTimer: null,
       isFinished: false,
@@ -80,13 +92,29 @@ const App: React.FC = () => {
     setCurrentSession({ ...currentSession, activeExerciseId: null });
   };
 
-  const handleLogSet = (weight: number, reps: number, isDropSet: boolean = false) => {
+  const handleAddCustomExercise = (ex: Exercise) => {
+      if (!currentSession) return;
+      setCurrentSession({
+          ...currentSession,
+          customExercises: [...(currentSession.customExercises || []), ex]
+      });
+  };
+
+  const handleLogSet = (metric1: number, metric2: number, isDropSet: boolean = false, isMonsterSet: boolean = false) => {
     if (!currentSession || !currentSession.activeExerciseId || !activePlan) return;
     
     const exerciseId = currentSession.activeExerciseId;
-    const exercise = activePlan.exercises.find(e => e.id === exerciseId);
+    
+    // Check in both Plan and Custom exercises
+    const exercise = 
+        activePlan.exercises.find(e => e.id === exerciseId) || 
+        currentSession.customExercises?.find(e => e.id === exerciseId);
     
     if (!exercise) return;
+
+    // Calculate Calories (Metric1=Weight/Dist, Metric2=Reps/Time)
+    const isCardio = exercise.type === 'cardio';
+    const calories = calculateCalories(metric1, metric2, exercise.metValue, isCardio);
 
     // Save to session state
     const updatedCompleted = { ...currentSession.completedExercises };
@@ -96,22 +124,26 @@ const App: React.FC = () => {
     
     const setNumber = updatedCompleted[exerciseId].length + 1;
     updatedCompleted[exerciseId].push({
-      weight,
-      reps,
+      weight: metric1, // Or Distance
+      reps: metric2,   // Or Time
       completed: true,
       timestamp: Date.now(),
-      isDropSet
+      isDropSet,
+      isMonsterSet,
+      calories
     });
 
     // Save persistent history log
-    saveExerciseLog(exerciseId, weight, reps, setNumber);
+    saveExerciseLog(exerciseId, metric1, metric2, setNumber);
 
-    // Start Timer logic (unless it's the last set OR it's a Drop Set)
-    const isLastSet = updatedCompleted[exerciseId].length >= exercise.sets;
-    let newTimer = null;
+    // Start Timer logic 
+    // UPDATE: Now we trigger the timer even on the last set to serve as a "Transition Timer"
+    // to the next exercise, unless it is a Drop/Monster Set (which needs no rest).
     
-    // If it is a Drop Set, we SKIP the rest timer to allow immediate work
-    if (!isLastSet && exercise.restSeconds > 0 && !isDropSet) {
+    const skipTimer = isDropSet || isMonsterSet;
+
+    let newTimer = null;
+    if (exercise.restSeconds > 0 && !skipTimer) {
       newTimer = {
         startTime: Date.now(),
         duration: exercise.restSeconds,
@@ -138,6 +170,7 @@ const App: React.FC = () => {
     // Refresh stats
     const stats = getDashboardStats();
     setBestLift(stats.bestLift);
+    setWeeklyCalories(stats.totalCalories);
   };
 
   const cancelTimer = () => {
@@ -219,6 +252,13 @@ const App: React.FC = () => {
       );
     }
 
+    // Helper to find the active exercise object
+    // Safe lookup: activePlan might be null if day changed, but activeSession persists logic via getActivePlan()
+    const exerciseList = activePlan ? [...activePlan.exercises, ...(currentSession.customExercises || [])] : [];
+    const activeExercise = currentSession.activeExerciseId 
+        ? exerciseList.find(e => e.id === currentSession.activeExerciseId)
+        : null;
+
     // ACTIVE WORKOUT VIEWS
     return (
       <div className="min-h-screen bg-gym-900 text-white p-4 flex flex-col max-w-md mx-auto relative overflow-hidden">
@@ -233,10 +273,10 @@ const App: React.FC = () => {
            </div>
         </div>
         
-        {currentSession.activeExerciseId && activePlan ? (
+        {activeExercise ? (
           <ExerciseCard 
-            exercise={activePlan.exercises.find(e => e.id === currentSession.activeExerciseId)!}
-            completedSets={currentSession.completedExercises[currentSession.activeExerciseId] || []}
+            exercise={activeExercise}
+            completedSets={currentSession.completedExercises[activeExercise.id] || []}
             onLogSet={handleLogSet}
             onBack={handleBackToWorkoutList}
           />
@@ -246,6 +286,7 @@ const App: React.FC = () => {
             session={currentSession}
             onSelectExercise={handleSelectExercise}
             onFinishWorkout={handleFinishWorkout}
+            onAddCustomExercise={handleAddCustomExercise}
           />
         ) : null}
 
@@ -317,21 +358,36 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      {/* Best Lift Hero */}
-      {bestLift && (
-        <div className="mb-6 bg-gym-800/30 rounded-lg p-3 border border-gym-700 flex items-center justify-between">
-           <div className="flex items-center gap-3">
-             <div className="p-2 bg-yellow-500/10 rounded-full">
-               <Trophy size={16} className="text-yellow-500" />
-             </div>
-             <div>
-               <p className="text-xs text-gray-400 uppercase font-bold">Heaviest Lift</p>
-               <p className="text-sm font-bold text-white">{bestLift.exerciseName}</p>
-             </div>
+      {/* Hero Stats Row */}
+      <div className="grid grid-cols-2 gap-3 mb-6">
+        {/* Best Lift */}
+        <div className="bg-gym-800/30 rounded-lg p-3 border border-gym-700">
+           <div className="flex items-center gap-2 mb-2">
+             <Trophy size={14} className="text-yellow-500" />
+             <p className="text-[10px] text-gray-400 uppercase font-bold">Best Lift</p>
            </div>
-           <p className="text-xl font-black text-gym-accent italic">{bestLift.weight}kg</p>
+           {bestLift ? (
+               <div>
+                  <p className="text-sm font-bold text-white truncate">{bestLift.exerciseName}</p>
+                  <p className="text-lg font-black text-gym-accent italic">{bestLift.weight}kg</p>
+               </div>
+           ) : (
+               <p className="text-xs text-gray-500 italic">No logs yet</p>
+           )}
         </div>
-      )}
+
+        {/* Calories Burned */}
+        <div className="bg-gym-800/30 rounded-lg p-3 border border-gym-700">
+           <div className="flex items-center gap-2 mb-2">
+             <Flame size={14} className="text-orange-500" />
+             <p className="text-[10px] text-gray-400 uppercase font-bold">Week Burn</p>
+           </div>
+           <div>
+              <p className="text-sm font-bold text-white">Total Energy</p>
+              <p className="text-lg font-black text-orange-400 italic">{weeklyCalories} kcal</p>
+           </div>
+        </div>
+      </div>
 
       {/* Main Workout Card */}
       <div className="mb-8 flex-1">

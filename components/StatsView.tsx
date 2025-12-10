@@ -23,6 +23,9 @@ const StatsView: React.FC<Props> = ({ onBack }) => {
     return 'bg-gym-accent border-blue-200 text-white shadow-[0_0_15px_rgba(59,130,246,0.5)]';
   };
 
+  // Explicitly type the records to handle 'unknown' type inference from Object.values
+  const records = Object.values(stats.personalRecords) as Array<{ weight: number; exerciseName: string; date: string }>;
+
   return (
     <div className="min-h-screen bg-gym-900 text-white p-6 max-w-md mx-auto animate-in slide-in-from-right">
       <div className="flex items-center gap-4 mb-8">
@@ -70,11 +73,11 @@ const StatsView: React.FC<Props> = ({ onBack }) => {
           <Medal className="text-yellow-500" /> All-Time Best (PRs)
         </h3>
         
-        {Object.keys(stats.personalRecords).length === 0 ? (
+        {records.length === 0 ? (
           <p className="text-gray-500 text-sm italic">Log your first workout to see records here.</p>
         ) : (
           <div className="space-y-3">
-            {Object.values(stats.personalRecords)
+            {records
               .sort((a, b) => b.weight - a.weight) // Heaviest first
               .map((record, idx) => (
               <div key={idx} className="bg-gym-800 p-4 rounded-xl border border-gym-700 flex items-center justify-between">

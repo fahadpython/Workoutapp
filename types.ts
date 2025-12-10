@@ -1,5 +1,9 @@
 
-export type MuscleGroup = 'Chest' | 'Back' | 'Legs' | 'Shoulders' | 'Triceps' | 'Biceps' | 'Abs' | 'Warmup';
+export type MuscleGroup = 'Chest' | 'Back' | 'Legs' | 'Shoulders' | 'Triceps' | 'Biceps' | 'Abs' | 'Warmup' | 'Cardio' | 'Other';
+
+export type ExerciseType = 'weighted' | 'cardio';
+
+export type MotionType = 'press' | 'pull' | 'hinge' | 'curl' | 'raise' | 'hold' | 'fly' | 'cardio';
 
 export interface PacerPhase {
   action: string; // Display text: "Lower", "Press", "Pull"
@@ -17,8 +21,9 @@ export interface PacerConfig {
 export interface Exercise {
   id: string;
   name: string;
+  type: ExerciseType;
   sets: number;
-  reps: string; // e.g., "8-10"
+  reps: string; // e.g., "8-10" or "10 mins"
   restSeconds: number;
   cues: string; // The "Trainer Cues"
   muscleFocus: string; // Display text like "Upper Chest"
@@ -26,6 +31,9 @@ export interface Exercise {
   feeling: string; // "How it should feel"
   isWarmup?: boolean;
   pacer: PacerConfig; // New bio-mechanic pacer
+  metValue: number; // Metabolic Equivalent for calorie calc
+  muscleSplit?: Record<string, number>; // Percentage breakdown
+  motionType?: MotionType; // Animation type
 }
 
 export interface WorkoutDay {
@@ -36,11 +44,13 @@ export interface WorkoutDay {
 }
 
 export interface SetLog {
-  weight: number;
-  reps: number;
+  weight: number; // For cardio: Distance
+  reps: number; // For cardio: Time (minutes)
   completed: boolean;
   timestamp: number;
-  isDropSet?: boolean; // New: Tracks intensity techniques
+  isDropSet?: boolean; 
+  isMonsterSet?: boolean;
+  calories?: number;
 }
 
 export interface ActiveTimer {
@@ -55,7 +65,8 @@ export interface SessionData {
   startTime: number;
   // exerciseId -> array of completed sets
   completedExercises: Record<string, SetLog[]>; 
-  // We no longer strictly enforce index, but we track the 'viewed' exercise
+  // Custom exercises added during this session
+  customExercises: Exercise[];
   activeExerciseId: string | null; 
   activeTimer: ActiveTimer | null;
   isFinished: boolean;
@@ -85,10 +96,11 @@ export interface ExerciseHistory {
 }
 
 export interface DashboardStats {
-  weeklyVolume: Record<MuscleGroup, number>; // Sets per muscle this week
-  missedMuscles: MuscleGroup[];
+  weeklyVolume: Record<string, number>; // Sets per muscle this week
+  missedMuscles: string[];
   personalRecords: Record<string, { weight: number; exerciseName: string; date: string }>;
   bestLift: { weight: number; exerciseName: string } | null;
+  totalCalories: number; // Weekly estimate
 }
 
 export const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
