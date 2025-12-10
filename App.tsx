@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { WORKOUT_SCHEDULE, ALL_WORKOUTS } from './constants';
 import { SessionData, UserStats, DAYS_OF_WEEK, Exercise } from './types';
@@ -7,13 +6,20 @@ import ExerciseCard from './components/ExerciseCard';
 import WorkoutView from './components/WorkoutView';
 import Timer from './components/Timer';
 import StatsView from './components/StatsView';
-import { Droplets, Trophy, Battery, UserCircle2, ArrowRight, Home, Settings, Trash2, Edit2, BarChart3, Dumbbell, ArrowLeft, Play, Volume2, Mic, Flame } from 'lucide-react';
+import { Droplets, Trophy, Battery, UserCircle2, ArrowRight, Settings, Trash2, Edit2, BarChart3, ArrowLeft, Flame } from 'lucide-react';
 
 const App: React.FC = () => {
-  const [currentSession, setCurrentSession] = useState<SessionData | null>(null);
-  const [userStats, setUserStats] = useState<UserStats>(loadUserStats());
-  const [todayIndex, setTodayIndex] = useState(new Date().getDay());
-  const [view, setView] = useState<'HOME' | 'WORKOUT' | 'SETTINGS' | 'STATS'>('HOME');
+  // Lazy load state to prevent reading localStorage on every render and fix flash
+  const [currentSession, setCurrentSession] = useState<SessionData | null>(() => loadSession());
+  const [userStats, setUserStats] = useState<UserStats>(() => loadUserStats());
+  
+  // Initialize view based on current session state immediately
+  const [view, setView] = useState<'HOME' | 'WORKOUT' | 'SETTINGS' | 'STATS'>(() => {
+    const session = loadSession();
+    return (session && !session.isFinished) ? 'WORKOUT' : 'HOME';
+  });
+  
+  const [todayIndex] = useState(new Date().getDay());
   
   // New: Override the automatic day selection
   const [selectedWorkoutId, setSelectedWorkoutId] = useState<string | null>(null);
@@ -21,17 +27,8 @@ const App: React.FC = () => {
   const [bestLift, setBestLift] = useState<{weight: number, exerciseName: string} | null>(null);
   const [weeklyCalories, setWeeklyCalories] = useState(0);
 
-  // Load active session on mount
+  // Load dashboard stats on mount
   useEffect(() => {
-    const session = loadSession();
-    if (session) {
-      setCurrentSession(session);
-      if (!session.isFinished) {
-        setView('WORKOUT');
-      }
-    }
-    
-    // Load simple stats for home screen
     const stats = getDashboardStats();
     setBestLift(stats.bestLift);
     setWeeklyCalories(stats.totalCalories);

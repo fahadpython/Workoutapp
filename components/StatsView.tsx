@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { DashboardStats, MuscleGroup } from '../types';
+import { DashboardStats } from '../types';
 import { getDashboardStats } from '../services/storageService';
-import { ArrowLeft, AlertTriangle, Medal, BarChart3, TrendingUp } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, Medal, BarChart3 } from 'lucide-react';
 
 interface Props {
   onBack: () => void;
